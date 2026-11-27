@@ -1,0 +1,54 @@
+{
+  "protocol_version": "0.1",
+  "event_id": "E-20261127T081808Z-P01-65920f9e1e",
+  "event_type": "change_published",
+  "group_id": "P",
+  "person_id": "P01",
+  "created_at": "2026-11-27T08:18:08.413960Z",
+  "related_events": [],
+  "change_id": "C-P01-27684a464b",
+  "branch": "people/P01/work",
+  "commit": "9eb354cb485f6c1afa17e74112816eb9c8e920f2",
+  "summary": "Complete schematic orthogonal routing, bus merging, and grid layout",
+  "base_commit": "8b31fc842aa9a8eb65484db360a7f930c5776aed",
+  "files_changed": [
+    ".gitignore",
+    "src/layout_engine.py",
+    "tests/test_layout.py",
+    "web/app.js",
+    "web/index.html",
+    "web/layout.js",
+    "web/router.js"
+  ],
+  "interface_changes": [],
+  "tests_run": [
+    "[\"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\pipx\\\\pipx\\\\venvs\\\\groupctl\\\\Scripts\\\\python.exe\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests\", \"-v\"]"
+  ],
+  "known_issues": [],
+  "proposed_for_integration": true,
+  "validation": {
+    "automated_result": "pass",
+    "results": [
+      {
+        "argv": [
+          "C:\\Users\\user\\AppData\\Local\\pipx\\pipx\\venvs\\groupctl\\Scripts\\python.exe",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-v"
+        ],
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "test_layering_and_cycle (test_layout.TestActivityLayoutEngine.test_layering_and_cycle) ... ok\ntest_swimlane_ordering (test_layout.TestActivityLayoutEngine.test_swimlane_ordering) ... ok\n\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\n",
+        "counts": [
+          2,
+          0,
+          0
+        ],
+        "evidence_state": "pass"
+      }
+    ]
+  }
+}

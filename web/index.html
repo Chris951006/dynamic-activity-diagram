@@ -1,0 +1,54 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dynamic Activity Diagram Layout & Editor</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #f4f6f8; }
+    header { background: #1e293b; color: #fff; padding: 10px 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    header h1 { font-size: 16px; margin: 0 12px 0 0; }
+    button { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    button:hover { background: #2563eb; }
+    button.secondary { background: #475569; }
+    button.danger { background: #dc2626; }
+    #status { font-size: 12px; color: #93c5fd; margin-left: auto; }
+    #canvas-container { flex: 1; overflow: auto; position: relative; }
+    svg { background: #ffffff; display: block; }
+    .lane-header { fill: #e2e8f0; stroke: #94a3b8; cursor: grab; }
+    .lane-body { fill: #f8fafc; stroke: #cbd5e1; }
+    .node-rect { fill: #ffffff; stroke: #2563eb; stroke-width: 2; rx: 6; cursor: move; }
+    .node-rect.selected { stroke: #f59e0b; stroke-width: 3; }
+    .edge-line { fill: none; stroke: #334155; stroke-width: 2; pointer-events: none; }
+    .seg-hit { fill: none; stroke: transparent; stroke-width: 12; cursor: ew-resize; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dynamic Activity Diagram</h1>
+    <button id="btn-auto-layout">智慧初始排版</button>
+    <button id="btn-add-node">+ 新增節點</button>
+    <button id="btn-add-edge">+ 連接兩節點</button>
+    <button id="btn-save">儲存目前排版</button>
+    <button id="btn-export" class="secondary">匯出 JSON</button>
+    <button id="btn-import" class="secondary">匯入 JSON</button>
+    <button id="btn-reset" class="danger">重置範例圖</button>
+    <input type="file" id="file-input" accept=".json" style="display:none" />
+    <span id="status">就緒</span>
+  </header>
+  <div id="canvas-container">
+    <svg id="diagram-svg" width="1200" height="900">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#334155" />
+        </marker>
+      </defs>
+      <g id="layer-lanes"></g>
+      <g id="layer-edges"></g>
+      <g id="layer-nodes"></g>
+    </svg>
+  </div>
+  <script src="layout.js"></script>
+  <script src="router.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
