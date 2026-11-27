@@ -1,4 +1,4 @@
-﻿const STORAGE_KEY = "dynamic_activity_diagram_saved_v2";
+﻿const STORAGE_KEY = "dynamic_activity_diagram_saved_v4";
 const DEFAULT_RAW_GRAPH = {
   diagramId: "activity-demo-01",
   lanes: [
@@ -27,9 +27,66 @@ const DEFAULT_RAW_GRAPH = {
 
 let diagram = null, connectMode = false, connectSourceId = null;
 
+function isBoxOverlap(a, b, pad = 14) {
+  return !(
+    a.x + a.width + pad <= b.x ||
+    b.x + b.width + pad <= a.x ||
+    a.y + a.height + pad <= b.y ||
+    b.y + b.height + pad <= a.y
+  );
+}
+
+function findFreePosition(lane, nodes, width = 120, height = 50, ignoreNodeId = null) {
+  const startX = lane.x + 30;
+  const maxX = Math.max(startX, lane.x + lane.width - width - 20);
+  for (let y = 75; y < 4000; y += 25) {
+    for (let x = startX; x <= maxX; x += 30) {
+      const candidate = { x, y, width, height };
+      if (!nodes.some(n => n.id !== ignoreNodeId && isBoxOverlap(candidate, n, 14))) {
+        return { x, y };
+      }
+    }
+  }
+  return { x: startX, y: 75 };
+}
+
+function segHitsBox(p1, p2, box, pad = 10) {
+  const minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x);
+  const minY = Math.min(p1.y, p2.y), maxY = Math.max(p1.y, p2.y);
+  return !(maxX < box.x - pad || minX > box.x + box.width + pad || maxY < box.y - pad || minY > box.y + box.height + pad);
+}
+
+// 檢查整條折線的每一段是否撞到無關方框，若有則自動繞開
+function avoidObstacles(u, v, rawWaypoints, allNodes, idx) {
+  const obstacles = allNodes.filter(n => n.id !== u.id && n.id !== v.id);
+  const uCenter = { x: u.x + u.width / 2, y: u.y + u.height / 2 };
+  const vCenter = { x: v.x + v.width / 2, y: v.y + v.height / 2 };
+  let pts = [uCenter, ...rawWaypoints, vCenter];
+
+  for (let pass = 0; pass < 3; pass++) {
+    let adjusted = false;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p1 = pts[i], p2 = pts[i + 1];
+      const hit = obstacles.find(box => segHitsBox(p1, p2, box, 10));
+      if (hit) {
+        const goLeft = (p1.x + p2.x) / 2 <= hit.x + hit.width / 2;
+        const safeX = goLeft ? hit.x - 22 - (idx % 3) * 8 : hit.x + hit.width + 22 + (idx % 3) * 8;
+        const midY1 = Math.min(p1.y, p2.y) + 15;
+        const midY2 = Math.max(p1.y, p2.y) - 15;
+        const detour = p1.y <= p2.y ? [{ x: safeX, y: midY1 }, { x: safeX, y: midY2 }] : [{ x: safeX, y: midY2 }, { x: safeX, y: midY1 }];
+        pts.splice(i + 1, 0, ...detour);
+        adjusted = true;
+        break;
+      }
+    }
+    if (!adjusted) break;
+  }
+  return pts.slice(1, -1);
+}
+
 function runSmartLayout(rawGraph) {
   const data = JSON.parse(JSON.stringify(rawGraph));
-  const nodeW = 120, nodeH = 50, layerGap = 90, nodeGap = 40, lanePad = 40, headerH = 50;
+  const nodeW = 120, nodeH = 50, layerGap = 95, nodeGap = 45, lanePad = 40, headerH = 50;
   const nodes = data.nodes || [], edges = data.edges || [];
   let lanes = data.lanes || [{ id: "default", name: "Default", order: 0 }];
   const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
@@ -68,8 +125,14 @@ function runSmartLayout(rawGraph) {
   data.lanes = lanes;
   const laneRank = Object.fromEntries(lanes.map(l => [l.id, l.order]));
 
+  // 區分「有連線的流程節點」與「尚未連線的新增孤立節點」，避免孤立節點全擠到最上方第0層
+  const connectedIds = new Set();
+  edges.forEach(e => { connectedIds.add(e.from); connectedIds.add(e.to); });
+  const activeNodes = connectedIds.size > 0 ? nodes.filter(n => connectedIds.has(n.id)) : nodes;
+  const isolatedNodes = connectedIds.size > 0 ? nodes.filter(n => !connectedIds.has(n.id)) : [];
+
   const adj = {};
-  nodes.forEach(n => { adj[n.id] = []; });
+  activeNodes.forEach(n => { adj[n.id] = []; });
   edges.forEach(e => { if (adj[e.from]) adj[e.from].push(e); });
   const visited = new Set(), recStack = new Set(), backEdgeIds = new Set();
 
@@ -81,16 +144,16 @@ function runSmartLayout(rawGraph) {
     });
     recStack.delete(u);
   }
-  nodes.forEach(n => { if (!visited.has(n.id)) dfs(n.id); });
+  activeNodes.forEach(n => { if (!visited.has(n.id)) dfs(n.id); });
   const dagEdges = edges.map(e => backEdgeIds.has(e.id) ? Object.assign({}, e, { from: e.to, to: e.from }) : e);
 
-  const inDeg = Object.fromEntries(nodes.map(n => [n.id, 0]));
-  const dagAdj = Object.fromEntries(nodes.map(n => [n.id, []]));
+  const inDeg = Object.fromEntries(activeNodes.map(n => [n.id, 0]));
+  const dagAdj = Object.fromEntries(activeNodes.map(n => [n.id, []]));
   dagEdges.forEach(e => {
-    if (e.from !== e.to) { dagAdj[e.from].push(e.to); inDeg[e.to] = (inDeg[e.to] || 0) + 1; }
+    if (e.from !== e.to && dagAdj[e.from]) { dagAdj[e.from].push(e.to); inDeg[e.to] = (inDeg[e.to] || 0) + 1; }
   });
-  const layers = Object.fromEntries(nodes.map(n => [n.id, 0]));
-  const q = nodes.filter(n => inDeg[n.id] === 0).map(n => n.id);
+  const layers = Object.fromEntries(activeNodes.map(n => [n.id, 0]));
+  const q = activeNodes.filter(n => inDeg[n.id] === 0).map(n => n.id);
   while (q.length > 0) {
     const u = q.shift();
     dagAdj[u].forEach(v => {
@@ -102,7 +165,7 @@ function runSmartLayout(rawGraph) {
 
   const maxLayer = Math.max(0, ...Object.values(layers));
   const layeredNodes = Array.from({ length: maxLayer + 1 }, () => []);
-  nodes.forEach(n => layeredNodes[layers[n.id]].push(n));
+  activeNodes.forEach(n => layeredNodes[layers[n.id]].push(n));
   layeredNodes.forEach(layer => layer.sort((a, b) => (laneRank[a.lane] || 0) - (laneRank[b.lane] || 0)));
 
   const maxPerLane = Object.fromEntries(lanes.map(l => [l.id, 1]));
@@ -130,18 +193,31 @@ function runSmartLayout(rawGraph) {
     });
   });
 
-  edges.forEach(e => {
+  // 孤立節點自動排在各泳道下方空位
+  const placedNodes = [...activeNodes];
+  isolatedNodes.forEach(n => {
+    const targetLane = lanes.find(l => l.id === n.lane) || lanes[0];
+    const pos = findFreePosition(targetLane, placedNodes, nodeW, nodeH);
+    n.x = pos.x; n.y = pos.y; n.width = nodeW; n.height = nodeH;
+    placedNodes.push(n);
+  });
+
+  edges.forEach((e, idx) => {
     const u = nodeMap[e.from], v = nodeMap[e.to];
     if (!u || !v) { e.waypoints = []; return; }
     const uCx = u.x + u.width / 2, uCy = u.y + u.height / 2;
     const vCx = v.x + v.width / 2, vCy = v.y + v.height / 2;
+    const laneOffset = ((idx % 5) - 2) * 10;
+    let baseWps = [];
+
     if (backEdgeIds.has(e.id)) {
-      const offX = Math.max(u.x + u.width, v.x + v.width) + 35;
-      e.waypoints = [{ x: offX, y: uCy }, { x: offX, y: vCy }];
+      const offX = Math.max(u.x + u.width, v.x + v.width) + 32 + (idx % 3) * 14;
+      baseWps = [{ x: offX, y: uCy }, { x: offX, y: vCy }];
     } else if (Math.abs(uCx - vCx) > 5 && Math.abs(u.y - v.y) > 5) {
-      const midY = (u.y + u.height + v.y) / 2;
-      e.waypoints = [{ x: uCx, y: midY }, { x: vCx, y: midY }];
-    } else { e.waypoints = []; }
+      const midY = (u.y + u.height + v.y) / 2 + laneOffset;
+      baseWps = [{ x: uCx, y: midY }, { x: vCx, y: midY }];
+    }
+    e.waypoints = avoidObstacles(u, v, baseWps, nodes, idx);
   });
   return data;
 }
@@ -166,17 +242,21 @@ function saveDiagram(notify = true) {
 }
 
 function render() {
+  const svg = document.getElementById("diagram-svg");
   const laneG = document.getElementById("layer-lanes"), edgeG = document.getElementById("layer-edges");
   const nodeG = document.getElementById("layer-nodes"), wpG = document.getElementById("layer-waypoints");
   laneG.innerHTML = ""; edgeG.innerHTML = ""; nodeG.innerHTML = ""; wpG.innerHTML = "";
 
+  const maxY = Math.max(850, ...diagram.nodes.map(n => n.y + n.height + 120));
   diagram.lanes.sort((a, b) => a.order - b.order);
   let curX = 20;
   diagram.lanes.forEach(l => { l.x = curX; curX += l.width; });
+  svg.setAttribute("width", Math.max(1200, curX + 60));
+  svg.setAttribute("height", maxY + 40);
 
   diagram.lanes.forEach((lane, idx) => {
     const header = createSvgEl("rect", { x: lane.x, y: 10, width: lane.width, height: 40, class: "lane-header" });
-    const body = createSvgEl("rect", { x: lane.x, y: 50, width: lane.width, height: 820, class: "lane-body" });
+    const body = createSvgEl("rect", { x: lane.x, y: 50, width: lane.width, height: maxY - 50, class: "lane-body" });
     const text = createSvgEl("text", {
       x: lane.x + lane.width / 2, y: 35, "text-anchor": "middle", "font-weight": "bold", "font-size": "14",
       style: "pointer-events: none; user-select: none;"
@@ -203,7 +283,9 @@ function render() {
     const u = nodeMap[edge.from], v = nodeMap[edge.to];
     if (!u || !v) return;
     if (!edge.waypoints || edge.waypoints.length === 0) {
-      edge.waypoints = [{ x: (u.x + u.width / 2 + v.x + v.width / 2) / 2, y: (u.y + u.height / 2 + v.y + v.height / 2) / 2 }];
+      const mx = (u.x + u.width / 2 + v.x + v.width / 2) / 2;
+      const my = (u.y + u.height / 2 + v.y + v.height / 2) / 2;
+      edge.waypoints = [{ x: mx, y: my }];
     }
     const pts = [{ x: u.x + u.width / 2, y: u.y + u.height / 2 }, ...edge.waypoints, { x: v.x + v.width / 2, y: v.y + v.height / 2 }];
     pts[0] = clipToRectEdge(u, pts[1]);
@@ -212,7 +294,7 @@ function render() {
     edgeG.appendChild(createSvgEl("path", { d: d, class: "edge-line", "marker-end": "url(#arrow)" }));
 
     edge.waypoints.forEach(wp => {
-      const circle = createSvgEl("circle", { cx: wp.x, cy: wp.y, r: 6, class: "waypoint" });
+      const circle = createSvgEl("circle", { cx: wp.x, cy: wp.y, r: 4.5, class: "waypoint", opacity: "0.75" });
       makeDraggable(circle, (dx, dy) => { wp.x += dx; wp.y += dy; render(); });
       wpG.appendChild(circle);
     });
@@ -240,11 +322,20 @@ function render() {
     });
     makeDraggable(rect, (dx, dy) => {
       if (connectMode) return;
-      node.x += dx; node.y += dy;
+      node.x += dx; node.y = Math.max(60, node.y + dy);
       const centerX = node.x + node.width / 2;
       const hitLane = diagram.lanes.find(l => centerX >= l.x && centerX <= l.x + l.width);
       if (hitLane) node.lane = hitLane.id;
       render();
+    }, () => {
+      const collided = diagram.nodes.some(other => other.id !== node.id && isBoxOverlap(node, other, 10));
+      if (collided) {
+        const currentLane = diagram.lanes.find(l => l.id === node.lane) || diagram.lanes[0];
+        const safePos = findFreePosition(currentLane, diagram.nodes, node.width, node.height, node.id);
+        node.x = safePos.x; node.y = safePos.y;
+        setStatus("偵測到方框重疊，已自動調整至不重疊空位");
+        render();
+      }
     });
     g.append(rect, label); nodeG.appendChild(g);
   });
@@ -271,12 +362,16 @@ function clipToRectEdge(rect, targetPt) {
   return { x: cx + dx * scale, y: cy + dy * scale };
 }
 
-function makeDraggable(el, onDrag) {
+function makeDraggable(el, onDrag, onEnd = null) {
   el.addEventListener("mousedown", e => {
     e.preventDefault(); e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     const onMove = mv => { onDrag(mv.clientX - lastX, mv.clientY - lastY); lastX = mv.clientX; lastY = mv.clientY; };
-    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (onEnd) onEnd();
+    };
     window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
   });
 }
@@ -290,7 +385,9 @@ function createSvgEl(tag, attrs) {
 document.getElementById("btn-auto-layout").onclick = () => { diagram = runSmartLayout(diagram); setStatus("已重新執行智慧初始排版"); render(); };
 document.getElementById("btn-add-node").onclick = () => {
   const id = "N" + (diagram.nodes.length + 1), label = prompt("輸入新節點名稱：", id) || id, firstLane = diagram.lanes[0];
-  diagram.nodes.push({ id, label, lane: firstLane.id, x: firstLane.x + 40, y: 80, width: 120, height: 50 }); render();
+  const freePos = findFreePosition(firstLane, diagram.nodes, 120, 50);
+  diagram.nodes.push({ id, label, lane: firstLane.id, x: freePos.x, y: freePos.y, width: 120, height: 50 });
+  setStatus(`已在空位建立節點 ${label}`); render();
 };
 document.getElementById("btn-add-edge").onclick = () => { connectMode = true; connectSourceId = null; setStatus("連線模式：請先點擊起點節點"); };
 document.getElementById("btn-save").onclick = () => saveDiagram(true);
