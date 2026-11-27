@@ -138,7 +138,7 @@ function runSmartLayout(rawGraph) {
     if (backEdgeIds.has(e.id)) {
       const offX = Math.max(u.x + u.width, v.x + v.width) + 35;
       e.waypoints = [{ x: offX, y: uCy }, {"x": offX, "y": vCy }];
-    } else if (Math.abs(uCx - vCx) > 5 && abs(u.y - v.y) > 5) {
+    } else if (Math.abs(uCx - vCx) > 5 && Math.abs(u.y - v.y) > 5) {
       const midY = (u.y + u.height + v.y) / 2;
       e.waypoints = [{ x: uCx, y: midY }, { x: vCx, y: midY }];
     } else { e.waypoints = []; }
@@ -301,3 +301,4 @@ document.getElementById("file-input").onchange = e => {
 };
 document.getElementById("btn-reset").onclick = () => { localStorage.removeItem(STORAGE_KEY); loadDiagram(); };
 loadDiagram();
+
