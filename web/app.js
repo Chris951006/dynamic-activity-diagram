@@ -1,4 +1,4 @@
-﻿const STORAGE_KEY = "dynamic_activity_diagram_saved_v1";
+﻿const STORAGE_KEY = "dynamic_activity_diagram_saved_v2";
 const DEFAULT_RAW_GRAPH = {
   diagramId: "activity-demo-01",
   lanes: [
@@ -37,7 +37,8 @@ function runSmartLayout(rawGraph) {
   if (lanes.length > 2) {
     const weights = {};
     edges.forEach(e => {
-      const uL = nodeMap[e.from]?.lane, vL = nodeMap[e.to]?.lane;
+      const uL = nodeMap[e.from] && nodeMap[e.from].lane;
+      const vL = nodeMap[e.to] && nodeMap[e.to].lane;
       if (uL && vL && uL !== vL) {
         const key = [uL, vL].sort().join("|");
         weights[key] = (weights[key] || 0) + 1;
@@ -61,16 +62,17 @@ function runSmartLayout(rawGraph) {
         remaining.delete(bestId);
       }
       const laneMap = Object.fromEntries(lanes.map(l => [l.id, l]));
-      lanes = orderedIds.map((id, idx) => ({ ...laneMap[id], order: idx }));
+      lanes = orderedIds.map((id, idx) => Object.assign({}, laneMap[id], { order: idx }));
     }
   }
   data.lanes = lanes;
   const laneRank = Object.fromEntries(lanes.map(l => [l.id, l.order]));
 
   const adj = {};
-  nodes.forEach(n => adj[n.id] = []);
-  edges.forEach(e => adj[e.from]?.push(e));
+  nodes.forEach(n => { adj[n.id] = []; });
+  edges.forEach(e => { if (adj[e.from]) adj[e.from].push(e); });
   const visited = new Set(), recStack = new Set(), backEdgeIds = new Set();
+
   function dfs(u) {
     visited.add(u); recStack.add(u);
     (adj[u] || []).forEach(e => {
@@ -80,7 +82,7 @@ function runSmartLayout(rawGraph) {
     recStack.delete(u);
   }
   nodes.forEach(n => { if (!visited.has(n.id)) dfs(n.id); });
-  const dagEdges = edges.map(e => backEdgeIds.has(e.id) ? { ...e, from: e.to, to: e.from } : e);
+  const dagEdges = edges.map(e => backEdgeIds.has(e.id) ? Object.assign({}, e, { from: e.to, to: e.from }) : e);
 
   const inDeg = Object.fromEntries(nodes.map(n => [n.id, 0]));
   const dagAdj = Object.fromEntries(nodes.map(n => [n.id, []]));
@@ -106,7 +108,7 @@ function runSmartLayout(rawGraph) {
   const maxPerLane = Object.fromEntries(lanes.map(l => [l.id, 1]));
   layeredNodes.forEach(layer => {
     const cnt = {};
-    layer.forEach(n => cnt[n.lane] = (cnt[n.lane] || 0) + 1);
+    layer.forEach(n => { cnt[n.lane] = (cnt[n.lane] || 0) + 1; });
     Object.entries(cnt).forEach(([lid, c]) => { if (maxPerLane[lid]) maxPerLane[lid] = Math.max(maxPerLane[lid], c); });
   });
 
@@ -123,10 +125,8 @@ function runSmartLayout(rawGraph) {
     const byLane = {};
     layer.forEach(n => { (byLane[n.lane] = byLane[n.lane] || []).push(n); });
     Object.entries(byLane).forEach(([lid, list]) => {
-      const startX = (laneX[lid] ?? 20) + lanePad;
-      list.forEach((n, i) => {
-        n.x = startX + i * (nodeW + nodeGap); n.y = y; n.width = nodeW; n.height = nodeH;
-      });
+      const startX = (laneX[lid] !== undefined ? laneX[lid] : 20) + lanePad;
+      list.forEach((n, i) => { n.x = startX + i * (nodeW + nodeGap); n.y = y; n.width = nodeW; n.height = nodeH; });
     });
   });
 
@@ -137,7 +137,7 @@ function runSmartLayout(rawGraph) {
     const vCx = v.x + v.width / 2, vCy = v.y + v.height / 2;
     if (backEdgeIds.has(e.id)) {
       const offX = Math.max(u.x + u.width, v.x + v.width) + 35;
-      e.waypoints = [{ x: offX, y: uCy }, {"x": offX, "y": vCy }];
+      e.waypoints = [{ x: offX, y: uCy }, { x: offX, y: vCy }];
     } else if (Math.abs(uCx - vCx) > 5 && Math.abs(u.y - v.y) > 5) {
       const midY = (u.y + u.height + v.y) / 2;
       e.waypoints = [{ x: uCx, y: midY }, { x: vCx, y: midY }];
@@ -145,8 +145,7 @@ function runSmartLayout(rawGraph) {
   });
   return data;
 }
-
-function setStatus(msg) { document.getElementById("status").textContent = msg; }
+function setStatus(msg) { const el = document.getElementById("status"); if (el) el.textContent = msg; }
 
 function loadDiagram() {
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -169,7 +168,7 @@ function saveDiagram(notify = true) {
 function render() {
   const laneG = document.getElementById("layer-lanes"), edgeG = document.getElementById("layer-edges");
   const nodeG = document.getElementById("layer-nodes"), wpG = document.getElementById("layer-waypoints");
-  laneG.innerHTML = edgeG.innerHTML = nodeG.innerHTML = wpG.innerHTML = "";
+  laneG.innerHTML = ""; edgeG.innerHTML = ""; nodeG.innerHTML = ""; wpG.innerHTML = "";
 
   diagram.lanes.sort((a, b) => a.order - b.order);
   let curX = 20;
@@ -178,16 +177,20 @@ function render() {
   diagram.lanes.forEach((lane, idx) => {
     const header = createSvgEl("rect", { x: lane.x, y: 10, width: lane.width, height: 40, class: "lane-header" });
     const body = createSvgEl("rect", { x: lane.x, y: 50, width: lane.width, height: 820, class: "lane-body" });
-    const text = createSvgEl("text", { x: lane.x + lane.width / 2, y: 35, "text-anchor": "middle", "font-weight": "bold", "font-size": "14" });
-    text.textContent = `${lane.name} (拖曳換順序)`;
+    const text = createSvgEl("text", {
+      x: lane.x + lane.width / 2, y: 35, "text-anchor": "middle", "font-weight": "bold", "font-size": "14",
+      style: "pointer-events: none; user-select: none;"
+    });
+    text.textContent = lane.name + " (左右拖曳換順序)";
     header.addEventListener("mousedown", e => {
+      e.preventDefault();
       const startX = e.clientX;
       const onUp = upEvt => {
         window.removeEventListener("mouseup", onUp);
         const dx = upEvt.clientX - startX;
-        if (Math.abs(dx) > 40) {
+        if (Math.abs(dx) > 30) {
           const targetIdx = dx > 0 ? Math.min(diagram.lanes.length - 1, idx + 1) : Math.max(0, idx - 1);
-          if (targetIdx !== idx) { swapLanes(idx, targetIdx); render(); }
+          if (targetIdx !== idx) { swapLanes(idx, targetIdx); setStatus("已調整泳道順序"); render(); }
         }
       };
       window.addEventListener("mouseup", onUp);
@@ -199,15 +202,17 @@ function render() {
   diagram.edges.forEach(edge => {
     const u = nodeMap[edge.from], v = nodeMap[edge.to];
     if (!u || !v) return;
-    const pts = [{ x: u.x + u.width / 2, y: u.y + u.height / 2 }, ...(edge.waypoints || []), { x: v.x + v.width / 2, y: v.y + v.height / 2 }];
+    if (!edge.waypoints || edge.waypoints.length === 0) {
+      edge.waypoints = [{ x: (u.x + u.width / 2 + v.x + v.width / 2) / 2, y: (u.y + u.height / 2 + v.y + v.height / 2) / 2 }];
+    }
+    const pts = [{ x: u.x + u.width / 2, y: u.y + u.height / 2 }, ...edge.waypoints, { x: v.x + v.width / 2, y: v.y + v.height / 2 }];
     pts[0] = clipToRectEdge(u, pts[1]);
     pts[pts.length - 1] = clipToRectEdge(v, pts[pts.length - 2]);
-    const d = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-    const path = createSvgEl("path", { d, class: "edge-line", "marker-end": "url(#arrow)" });
-    edgeG.appendChild(path);
-    if (!edge.waypoints || edge.waypoints.length === 0) edge.waypoints = [{ x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }];
+    const d = pts.map((p, i) => (i === 0 ? "M " : "L ") + p.x + " " + p.y).join(" ");
+    edgeG.appendChild(createSvgEl("path", { d: d, class: "edge-line", "marker-end": "url(#arrow)" }));
+
     edge.waypoints.forEach(wp => {
-      const circle = createSvgEl("circle", { cx: wp.x, cy: wp.y, r: 5, class: "waypoint" });
+      const circle = createSvgEl("circle", { cx: wp.x, cy: wp.y, r: 6, class: "waypoint" });
       makeDraggable(circle, (dx, dy) => { wp.x += dx; wp.y += dy; render(); });
       wpG.appendChild(circle);
     });
@@ -215,13 +220,19 @@ function render() {
 
   diagram.nodes.forEach(node => {
     const g = createSvgEl("g", {});
-    const rect = createSvgEl("rect", { x: node.x, y: node.y, width: node.width, height: node.height, class: "node-rect" + (connectSourceId === node.id ? " selected" : "") });
-    const label = createSvgEl("text", { x: node.x + node.width / 2, y: node.y + node.height / 2 + 5, "text-anchor": "middle", "font-size": "13" });
+    const rect = createSvgEl("rect", {
+      x: node.x, y: node.y, width: node.width, height: node.height,
+      class: "node-rect" + (connectSourceId === node.id ? " selected" : "")
+    });
+    const label = createSvgEl("text", {
+      x: node.x + node.width / 2, y: node.y + node.height / 2 + 5, "text-anchor": "middle", "font-size": "13",
+      style: "pointer-events: none; user-select: none;"
+    });
     label.textContent = node.label || node.id;
     rect.addEventListener("click", e => {
       if (!connectMode) return;
       e.stopPropagation();
-      if (!connectSourceId) { connectSourceId = node.id; setStatus(`已選起點 ${node.id}，請點擊目標節點`); render(); }
+      if (!connectSourceId) { connectSourceId = node.id; setStatus("已選起點 " + node.id + "，請點擊目標節點"); render(); }
       else if (connectSourceId !== node.id) {
         diagram.edges.push({ id: "E" + Date.now().toString().slice(-4), from: connectSourceId, to: node.id, waypoints: [] });
         connectMode = false; connectSourceId = null; setStatus("已建立新連線"); render();
@@ -262,7 +273,7 @@ function clipToRectEdge(rect, targetPt) {
 
 function makeDraggable(el, onDrag) {
   el.addEventListener("mousedown", e => {
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     const onMove = mv => { onDrag(mv.clientX - lastX, mv.clientY - lastY); lastX = mv.clientX; lastY = mv.clientY; };
     const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
@@ -285,7 +296,7 @@ document.getElementById("btn-add-edge").onclick = () => { connectMode = true; co
 document.getElementById("btn-save").onclick = () => saveDiagram(true);
 document.getElementById("btn-export").onclick = () => {
   const blob = new Blob([JSON.stringify(diagram, null, 2)], { type: "application/json" });
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${diagram.diagramId || "activity-diagram"}.json`; a.click();
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = (diagram.diagramId || "activity-diagram") + ".json"; a.click();
 };
 document.getElementById("btn-import").onclick = () => document.getElementById("file-input").click();
 document.getElementById("file-input").onchange = e => {
@@ -293,7 +304,7 @@ document.getElementById("file-input").onchange = e => {
   const reader = new FileReader();
   reader.onload = evt => {
     const loaded = JSON.parse(evt.target.result);
-    const hasCoords = loaded.nodes?.some(n => typeof n.x === "number");
+    const hasCoords = loaded.nodes && loaded.nodes.some(n => typeof n.x === "number");
     diagram = hasCoords ? loaded : runSmartLayout(loaded);
     saveDiagram(false); setStatus(hasCoords ? "已匯入並還原儲存的排版" : "已匯入原始圖並執行智慧初始排版"); render();
   };
@@ -301,4 +312,3 @@ document.getElementById("file-input").onchange = e => {
 };
 document.getElementById("btn-reset").onclick = () => { localStorage.removeItem(STORAGE_KEY); loadDiagram(); };
 loadDiagram();
-
