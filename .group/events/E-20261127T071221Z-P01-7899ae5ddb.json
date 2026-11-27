@@ -1,0 +1,52 @@
+{
+  "protocol_version": "0.1",
+  "event_id": "E-20261127T071221Z-P01-7899ae5ddb",
+  "event_type": "change_published",
+  "group_id": "P",
+  "person_id": "P01",
+  "created_at": "2026-11-27T07:12:21.626227Z",
+  "related_events": [],
+  "change_id": "C-P01-0dbdf93b58",
+  "branch": "people/P01/work",
+  "commit": "14a126bbd36042b430261632e7fafac15bab60d9",
+  "summary": "Implement smart activity diagram layout engine, interactive web editor, and persistence",
+  "base_commit": "8b31fc842aa9a8eb65484db360a7f930c5776aed",
+  "files_changed": [
+    ".gitignore",
+    "src/layout_engine.py",
+    "tests/test_layout.py",
+    "web/app.js",
+    "web/index.html"
+  ],
+  "interface_changes": [],
+  "tests_run": [
+    "[\"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\pipx\\\\pipx\\\\venvs\\\\groupctl\\\\Scripts\\\\python.exe\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests\", \"-v\"]"
+  ],
+  "known_issues": [],
+  "proposed_for_integration": true,
+  "validation": {
+    "automated_result": "pass",
+    "results": [
+      {
+        "argv": [
+          "C:\\Users\\user\\AppData\\Local\\pipx\\pipx\\venvs\\groupctl\\Scripts\\python.exe",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-v"
+        ],
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "test_layering_and_cycle (test_layout.TestActivityLayoutEngine.test_layering_and_cycle) ... ok\ntest_swimlane_ordering (test_layout.TestActivityLayoutEngine.test_swimlane_ordering) ... ok\n\n----------------------------------------------------------------------\nRan 2 tests in 0.000s\n\nOK\n",
+        "counts": [
+          2,
+          0,
+          0
+        ],
+        "evidence_state": "pass"
+      }
+    ]
+  }
+}
